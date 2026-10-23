@@ -52,6 +52,8 @@ Wrapped URL fragments are joined during extraction. The company with an empty re
 
 Click a company card or company name to open its profile. **Company profile** holds sourced research; **My tracking & notes** holds your private application details. The card's Notes & tracking button goes straight to your notebook without starting AI research.
 
+Use the **AI research** switch in the directory banner to pause all new company-detail fetching, including manual refreshes. Saved profiles and your tracking remain available. The choice is stored in SQLite and survives restarts across browsers on this computer. Requests already sent to Groq may finish after you switch it off. Turn the switch on again to resume research.
+
 1. Open **AI settings** in the header.
 2. Paste your Groq key into the password field and select a model (default: `openai/gpt-oss-20b`).
 3. Save the connection, then open a company card. Research starts automatically the first time; saved results load immediately on later visits.
@@ -64,3 +66,9 @@ Research uses two Groq calls: browser search for public source material, followe
 Profiles include a summary, industry, headquarters, founding year, company size, remote policy, hiring regions, tech stack, hiring activity, source links, an available careers-page link, and suggested next steps. Fields without a cited source show **Not found**. AI output is not verified hiring eligibility; confirm details on the source pages. Opening a profile itself does not increase your click count.
 
 Profiles persist in `company_profiles` in the same SQLite database as your progress, and are included in full JSON backups. CSV continues to export company tracking fields only. No Groq key or private notes are sent to website research. Built-in browser search is provided through Groq; company identity is shared with that service. The app cannot retrieve restricted or paywalled company databases.
+
+## Sharing a temporary demo
+
+`python app.py --demo --port 8002` runs a separate demo using `data/demo.sqlite3`. AI research and key settings are disabled on the server, and visitors can experiment with the demo's shared bookmarks, click history and notes. The personal database is not copied or exposed. Pair this with a temporary Cloudflare Tunnel to `http://127.0.0.1:8002`; keep the computer awake while sharing. Anyone with the tunnel URL can use this demo. Demo notes are shared among all visitors, so do not enter private information there.
+
+For the sharing session started by Codex, double-click **Stop Demo Sharing.cmd** to stop its tunnel and demo server. This leaves your personal tracker running. Local tunnel binaries and session logs live in Git-ignored `.local-tools/` and `.share/` folders. The generated public URL changes when a new quick tunnel is created.

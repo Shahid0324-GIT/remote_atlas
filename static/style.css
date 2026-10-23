@@ -135,3 +135,13 @@
  .profile-toolbar { align-items: flex-start; }
  .profile-tabs button { padding: 11px 8px; font-size: 12px; }
 }
+.research-controls { display: flex; align-items: center; gap: 14px; flex-shrink: 0; flex-wrap: wrap; }
+.research-switch { display: inline-flex; align-items: center; gap: 9px; border: 0; padding: 7px 0; background: none; color: var(--ink); font-size: 12px; }
+.research-switch .switch-track { display: inline-block; width: 34px; height: 20px; margin: 0; border-radius: 12px; background: #929b8a; padding: 3px; }
+.research-switch .switch-track span { display: block; width: 14px; height: 14px; margin: 0; border-radius: 50%; background: #f7f8f3; transition: transform .15s; }
+.research-switch[aria-checked="true"] .switch-track { background: #6b8b50; }
+.research-switch[aria-checked="true"] .switch-track span { transform: translateX(14px); }
+.research-switch #ai-research-label { margin: 0; color: inherit; font-size: 12px; }
+@media(max-width:1150px) { .research-banner { flex-wrap: wrap; } }
+@media(prefers-reduced-motion:reduce) { .research-switch .switch-track span { transition: none; } }
+.demo-notice { background: #374a31; color: #e0ebd6; text-align: center; padding: 10px 16px; font-size: 12px; position: sticky; top: 0; z-index: 5; }

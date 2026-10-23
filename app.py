@@ -15,6 +15,7 @@ from urllib.parse import urlparse
 
 ROOT = Path(__file__).resolve().parent
 DB = Path(os.environ.get('REMOTE_ATLAS_DB', str(ROOT / 'data' / 'tracker.sqlite3')))
+DEMO_MODE = False
 STATUSES = ['Not started', 'Researching', 'Applied', 'Interviewing', 'Offer', 'Closed']
 RESEARCH_SLOTS = threading.BoundedSemaphore(2)
 RESEARCH_LOCK = threading.Lock()
@@ -48,6 +49,7 @@ def initialize():
           CREATE INDEX IF NOT EXISTS click_company ON clicks(company_id);
           CREATE TABLE IF NOT EXISTS company_profiles (
             company_id INTEGER PRIMARY KEY REFERENCES companies(id), data TEXT NOT NULL);
+          CREATE TABLE IF NOT EXISTS app_settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);
         ''')
         seed = json.loads((ROOT / 'data' / 'companies.json').read_text(encoding='utf-8'))
         for company in seed:
@@ -60,6 +62,16 @@ def catalog():
         return [dict(row) for row in db.execute('''SELECT c.*, COUNT(k.id) AS clicks,
           MAX(k.clicked_at) AS last_visit FROM companies c LEFT JOIN clicks k ON c.id=k.company_id
           GROUP BY c.id ORDER BY c.name COLLATE NOCASE''')]
+
+def research_enabled():
+    if DEMO_MODE: return False
+    with connect() as db:
+        row = db.execute("SELECT value FROM app_settings WHERE key='ai_research_enabled'").fetchone()
+    return row is None or row['value'] == 'true'
+
+def ai_settings():
+    if DEMO_MODE: return {'configured':False,'enabled':False,'model':ai_profiles.DEFAULT_MODEL,'demo':True}
+    return {**ai_profiles.public_configuration(), 'enabled':research_enabled()}
 
 class Handler(BaseHTTPRequestHandler):
     def send(self, payload, status=200, kind='application/json; charset=utf-8', headers=None):
@@ -75,7 +87,7 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_GET(self):
         path = urlparse(self.path).path
-        if path == '/api/ai/settings': return self.send(ai_profiles.public_configuration())
+        if path == '/api/ai/settings': return self.send(ai_settings())
         parts = path.strip('/').split('/')
         if len(parts) == 4 and parts[:2] == ['api','companies'] and parts[3] == 'profile':
             try: company_id = int(parts[2])
@@ -107,14 +119,20 @@ class Handler(BaseHTTPRequestHandler):
         assets = {'/':'index.html', '/app.js':'app.js', '/profile.js':'profile.js', '/style.css':'style.css'}
         if path in assets:
             kinds = {'/':'text/html', '/app.js':'text/javascript', '/profile.js':'text/javascript', '/style.css':'text/css'}
-            return self.send((ROOT/'static'/assets[path]).read_bytes(), kind=kinds[path]+'; charset=utf-8')
+            body = (ROOT/'static'/assets[path]).read_bytes()
+            if path == '/' and DEMO_MODE:
+                body = body.replace(b'<body>',b'<body><div class="demo-notice">Shared demo &middot; Try bookmarks, visits, and notes. Changes stay in this demo. AI research is disabled.</div>')
+            return self.send(body, kind=kinds[path]+'; charset=utf-8')
         self.send({'error':'Not found'}, 404)
 
     def do_POST(self):
         # Mutations only accept same-origin JSON, preventing cross-site form requests.
         origin = self.headers.get('Origin')
-        if origin and origin != 'http://' + self.headers.get('Host', ''):
+        host = self.headers.get('Host', '')
+        if origin and origin not in ('http://' + host, 'https://' + host):
             return self.send({'error':'Origin rejected'}, 403)
+        if DEMO_MODE and urlparse(self.path).path in ('/api/ai/preferences','/api/ai/settings'):
+            return self.send({'error':'AI settings are unavailable in the shared demo.'},403)
         if self.headers.get('Content-Type','').split(';')[0] != 'application/json':
             return self.send({'error':'JSON required'}, 415)
         try:
@@ -122,10 +140,16 @@ class Handler(BaseHTTPRequestHandler):
             if size < 0 or size > 32000: raise ValueError('Request too large')
             data = json.loads(self.rfile.read(size))
             if not isinstance(data,dict): raise ValueError('Object required')
+            if urlparse(self.path).path == '/api/ai/preferences':
+                if set(data) != {'enabled'} or type(data['enabled']) is not bool:
+                    raise ValueError('Boolean preference required')
+                with connect() as db:
+                    db.execute("INSERT INTO app_settings(key,value) VALUES('ai_research_enabled',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value", (json.dumps(data['enabled']),))
+                return self.send(ai_settings())
             if urlparse(self.path).path == '/api/ai/settings':
                 with SETTINGS_LOCK:
                     result = ai_profiles.save_configuration(data)
-                return self.send(result)
+                return self.send({**result, 'enabled':research_enabled()})
             parts = urlparse(self.path).path.strip('/').split('/')
             if len(parts) != 4 or parts[:2] != ['api','companies']: return self.send({'error':'Not found'},404)
             company_id = int(parts[2])
@@ -168,6 +192,8 @@ class Handler(BaseHTTPRequestHandler):
             cached = db.execute('SELECT data FROM company_profiles WHERE company_id=?',(company_id,)).fetchone()
         if cached and not data.get('refresh'):
             return self.send({'profile':json.loads(cached['data']), 'cached':True})
+        if not research_enabled():
+            return self.send({'error':'AI research is turned off. Enable it in the directory banner to fetch company details.'},403)
         with RESEARCH_LOCK:
             if company_id in RESEARCHING:
                 return self.send({'error':'This company is already being researched. Reopen its profile shortly.'},409)
@@ -188,7 +214,11 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--port', type=int, default=8000)
     parser.add_argument('--open-browser', action='store_true', help='Open the app in your default browser')
+    parser.add_argument('--demo', action='store_true', help='Use a separate demo database and disable AI access')
     args = parser.parse_args()
+    if args.demo:
+        DEMO_MODE = True
+        DB = ROOT / 'data' / 'demo.sqlite3'
     try:
         server = ThreadingHTTPServer(('127.0.0.1',args.port), Handler)
     except OSError:

@@ -90,6 +90,47 @@ class TrackerTests(unittest.TestCase):
         self.assertEqual(caught.exception.code,400)
         caught.exception.close()
 
+    def test_ai_research_toggle_blocks_fetching_but_keeps_cached_profiles(self):
+        saved={'summary':'Saved before research was disabled'}
+        with app.connect() as db:
+            db.execute('INSERT INTO company_profiles(company_id,data) VALUES(?,?)',(15,json.dumps(saved)))
+        try:
+            result=json.load(self.request('/api/ai/preferences',{'enabled':False}))
+            self.assertFalse(result['enabled'])
+            app.initialize()
+            self.assertFalse(json.load(self.request('/api/ai/settings'))['enabled'])
+            self.assertEqual(json.load(self.request('/api/companies/15/profile'))['profile'],saved)
+            with patch.object(app.ai_profiles,'research') as research:
+                cached=json.load(self.request('/api/companies/15/research',{}))
+                self.assertTrue(cached['cached'])
+                for company_id,request_data in ((15,{'refresh':True}),(16,{})):
+                    with self.assertRaises(HTTPError) as caught:
+                        self.request(f'/api/companies/{company_id}/research',request_data)
+                    self.assertEqual(caught.exception.code,403)
+                    caught.exception.close()
+                research.assert_not_called()
+            with self.assertRaises(HTTPError) as caught:
+                self.request('/api/ai/preferences',{'enabled':'false'})
+            self.assertEqual(caught.exception.code,400)
+            caught.exception.close()
+        finally:
+            json.load(self.request('/api/ai/preferences',{'enabled':True}))
+
+    def test_shared_demo_disables_ai_and_allows_https_tracking(self):
+        with patch.object(app,'DEMO_MODE',True), patch.object(app.ai_profiles,'research') as research:
+            settings=json.load(self.request('/api/ai/settings'))
+            self.assertTrue(settings['demo'])
+            self.assertFalse(settings['configured'])
+            self.assertFalse(settings['enabled'])
+            for path, data in (('/api/ai/settings',{'key':'no'}),('/api/ai/preferences',{'enabled':True}),('/api/companies/30/research',{})):
+                with self.assertRaises(HTTPError) as caught:self.request(path,data)
+                self.assertEqual(caught.exception.code,403)
+                caught.exception.close()
+            research.assert_not_called()
+            self.assertIn('Shared demo',self.request('/').read().decode())
+            response=json.load(self.request('/api/companies/31/update',{'favorite':True},Host='demo.example',Origin='https://demo.example'))
+            self.assertTrue(response['ok'])
+
     def test_company_research_cache_refresh_and_failure(self):
         self.assertIsNone(json.load(self.request('/api/companies/10/profile'))['profile'])
         profile={'summary':'A researched company','careers_url':'https://example.com/careers','sources':[{'title':'Official','url':'https://example.com'}]}
