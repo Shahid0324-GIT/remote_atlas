@@ -130,6 +130,28 @@ class TrackerTests(unittest.TestCase):
             self.assertIn('Shared demo',self.request('/').read().decode())
             response=json.load(self.request('/api/companies/31/update',{'favorite':True},Host='demo.example',Origin='https://demo.example'))
             self.assertTrue(response['ok'])
+            with self.assertRaises(HTTPError) as caught:self.request('/api/scanner/settings')
+            self.assertEqual(caught.exception.code,403)
+            caught.exception.close()
+            with self.assertRaises(HTTPError) as caught:self.request('/api/scanner/start',{})
+            self.assertEqual(caught.exception.code,403)
+            caught.exception.close()
+
+    def test_scanner_http_settings_resume_privacy_and_job_visits(self):
+        resume='A software developer with Python SQL and Docker project experience.'
+        settings=json.load(self.request('/api/scanner/settings',{'resume_text':resume,'roles':'engineer,developer','use_browser':False}))
+        self.assertEqual(settings['detected_skills'],['Docker','Python','SQL'])
+        self.assertNotIn(resume,self.request('/api/companies').read().decode())
+        job={'title':'Software Engineer','url':'https://example.com/position','description':'Python SQL','location':'Remote India','remote':True,'source':'Test feed'}
+        with app.connect() as db:
+            db.execute('INSERT INTO scanner_jobs(company_id,url,data,fetched_at) VALUES(?,?,?,?)',(17,job['url'],json.dumps(job),app.job_scanner.now()))
+        response=json.load(self.request('/api/scanner/results'))
+        self.assertEqual(next(j for j in response['jobs'] if j['company_id']==17)['score'],100)
+        visit=json.load(self.request('/api/companies/17/visit',{'kind':'job','url':job['url']}))
+        self.assertEqual(visit['url'],job['url'])
+        with self.assertRaises(HTTPError) as caught:self.request('/api/companies/17/visit',{'kind':'job','url':'https://other.example'})
+        self.assertEqual(caught.exception.code,400)
+        caught.exception.close()
 
     def test_company_research_cache_refresh_and_failure(self):
         self.assertIsNone(json.load(self.request('/api/companies/10/profile'))['profile'])

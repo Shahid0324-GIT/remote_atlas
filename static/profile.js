@@ -17,6 +17,7 @@ function paintConnection() {
  $('ai-research-toggle').setAttribute('aria-checked',String(aiConfig.enabled));
  $('ai-research-toggle').disabled=!!aiConfig.demo;
  $('ai-settings').hidden=!!aiConfig.demo;
+ $('open-matcher').hidden=!!aiConfig.demo;
  $('ai-connect-banner').hidden=!!aiConfig.demo;
  $('ai-research-label').textContent=aiConfig.enabled?'AI research on':'AI research off';
  $('ai-research-hint').textContent=aiConfig.enabled?'Click a company card for an AI-researched profile, sources, and your next steps.':'Fetching is paused. Saved company profiles and your tracking are still available.';

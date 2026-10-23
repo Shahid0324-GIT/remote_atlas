@@ -7,3 +7,4 @@ data/*.sqlite3*
 data/tmp*/
 .local-tools/
 .share/
+.venv-scanner/
