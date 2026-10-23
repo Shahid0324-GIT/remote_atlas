@@ -7,6 +7,7 @@ import os
 import sqlite3
 import threading
 import ai_profiles
+import job_scanner
 from contextlib import contextmanager
 from datetime import date, datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -56,6 +57,12 @@ def initialize():
             db.execute('''INSERT INTO companies(name,url,region,source_page)
                 SELECT :name,:url,:region,:source_page WHERE NOT EXISTS
                 (SELECT 1 FROM companies WHERE name=:name AND url=:url)''', company)
+        job_scanner.initialize(db)
+        starter_sources=json.loads((ROOT/'data'/'careers-sources.json').read_text(encoding='utf-8'))
+        for source in starter_sources:
+            company=db.execute('SELECT id FROM companies WHERE name=? COLLATE NOCASE',(source['company'],)).fetchone()
+            if company:
+                db.execute('INSERT OR IGNORE INTO job_sources(company_id,url) VALUES(?,?)',(company['id'],source['url']))
 
 def catalog():
     with connect() as db:
@@ -73,6 +80,8 @@ def ai_settings():
     if DEMO_MODE: return {'configured':False,'enabled':False,'model':ai_profiles.DEFAULT_MODEL,'demo':True}
     return {**ai_profiles.public_configuration(), 'enabled':research_enabled()}
 
+SCANNER = job_scanner.Scanner(connect, lambda:DEMO_MODE)
+
 class Handler(BaseHTTPRequestHandler):
     def send(self, payload, status=200, kind='application/json; charset=utf-8', headers=None):
         body = json.dumps(payload).encode() if kind.startswith('application/json') else payload
@@ -87,6 +96,12 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_GET(self):
         path = urlparse(self.path).path
+        if path.startswith('/api/scanner/'):
+            if DEMO_MODE:return self.send({'error':'Resume matching and scanning are private and unavailable in the shared demo.'},403)
+            if path=='/api/scanner/settings':return self.send(SCANNER.settings())
+            if path=='/api/scanner/state':return self.send(SCANNER.state())
+            if path=='/api/scanner/results':return self.send(SCANNER.results())
+            return self.send({'error':'Not found'},404)
         if path == '/api/ai/settings': return self.send(ai_settings())
         parts = path.strip('/').split('/')
         if len(parts) == 4 and parts[:2] == ['api','companies'] and parts[3] == 'profile':
@@ -116,9 +131,9 @@ class Handler(BaseHTTPRequestHandler):
                 data = {'version':1, 'companies':[dict(r) for r in db.execute('SELECT * FROM companies')], 'clicks':[dict(r) for r in db.execute('SELECT * FROM clicks')],
                         'profiles':[{'company_id':r['company_id'],'profile':json.loads(r['data'])} for r in db.execute('SELECT * FROM company_profiles')]}
             return self.send(json.dumps(data, indent=2).encode(), kind='application/octet-stream', headers={'Content-Disposition':'attachment; filename="remote-atlas-backup.json"'})
-        assets = {'/':'index.html', '/app.js':'app.js', '/profile.js':'profile.js', '/style.css':'style.css'}
+        assets = {'/':'index.html', '/app.js':'app.js', '/profile.js':'profile.js', '/matcher.js':'matcher.js', '/style.css':'style.css'}
         if path in assets:
-            kinds = {'/':'text/html', '/app.js':'text/javascript', '/profile.js':'text/javascript', '/style.css':'text/css'}
+            kinds = {'/':'text/html', '/app.js':'text/javascript', '/profile.js':'text/javascript', '/matcher.js':'text/javascript', '/style.css':'text/css'}
             body = (ROOT/'static'/assets[path]).read_bytes()
             if path == '/' and DEMO_MODE:
                 body = body.replace(b'<body>',b'<body><div class="demo-notice">Shared demo &middot; Try bookmarks, visits, and notes. Changes stay in this demo. AI research is disabled.</div>')
@@ -133,13 +148,26 @@ class Handler(BaseHTTPRequestHandler):
             return self.send({'error':'Origin rejected'}, 403)
         if DEMO_MODE and urlparse(self.path).path in ('/api/ai/preferences','/api/ai/settings'):
             return self.send({'error':'AI settings are unavailable in the shared demo.'},403)
+        if DEMO_MODE and urlparse(self.path).path.startswith('/api/scanner/'):
+            return self.send({'error':'Job scanning and resume settings are unavailable in the shared demo.'},403)
         if self.headers.get('Content-Type','').split(';')[0] != 'application/json':
             return self.send({'error':'JSON required'}, 415)
         try:
             size = int(self.headers.get('Content-Length',0))
-            if size < 0 or size > 32000: raise ValueError('Request too large')
+            path = urlparse(self.path).path
+            limit = 5_400_000 if path=='/api/scanner/resume' else 130000 if path=='/api/scanner/settings' else 32000
+            if size < 0 or size > limit: raise ValueError('Request too large')
             data = json.loads(self.rfile.read(size))
             if not isinstance(data,dict): raise ValueError('Object required')
+            if path.startswith('/api/scanner/'):
+                try:
+                    routes={'/api/scanner/settings':SCANNER.save_settings,'/api/scanner/source':SCANNER.save_source,
+                            '/api/scanner/start':SCANNER.start,'/api/scanner/cancel':lambda data:SCANNER.cancel(),
+                            '/api/scanner/resume':job_scanner.extract_resume}
+                    if path not in routes:return self.send({'error':'Not found'},404)
+                    return self.send(routes[path](data))
+                except (ValueError,job_scanner.job_sources.ScanError) as error:
+                    return self.send({'error':str(error)},400)
             if urlparse(self.path).path == '/api/ai/preferences':
                 if set(data) != {'enabled'} or type(data['enabled']) is not bool:
                     raise ValueError('Boolean preference required')
@@ -159,6 +187,15 @@ class Handler(BaseHTTPRequestHandler):
                 if not row: return self.send({'error':'Company not found'},404)
                 if parts[3] == 'visit':
                     destination = row['url']
+                    if data.get('kind') == 'scan-careers':
+                        source=db.execute('SELECT url FROM job_sources WHERE company_id=?',(company_id,)).fetchone()
+                        check=db.execute('SELECT data FROM scanner_checks WHERE company_id=?',(company_id,)).fetchone()
+                        destination=(source['url'] if source else json.loads(check['data']).get('source_url') if check else row['url'])
+                        if not ai_profiles.safe_url(destination):return self.send({'error':'No valid careers page is available.'},400)
+                    if data.get('kind') == 'job':
+                        job = db.execute('SELECT url FROM scanner_jobs WHERE company_id=? AND url=? AND active=1',(company_id,data.get('url',''))).fetchone()
+                        if not job:return self.send({'error':'This job is no longer in the active scan results.'},400)
+                        destination=job['url']
                     if data.get('kind') == 'careers':
                         saved = db.execute('SELECT data FROM company_profiles WHERE company_id=?',(company_id,)).fetchone()
                         destination = ai_profiles.safe_url(json.loads(saved['data']).get('careers_url')) if saved else ''
@@ -215,16 +252,24 @@ if __name__ == '__main__':
     parser.add_argument('--port', type=int, default=8000)
     parser.add_argument('--open-browser', action='store_true', help='Open the app in your default browser')
     parser.add_argument('--demo', action='store_true', help='Use a separate demo database and disable AI access')
+    parser.add_argument('--scanner-experiment', action='store_true', help='Use a separate experimental job scanner database')
     args = parser.parse_args()
     if args.demo:
         DEMO_MODE = True
         DB = ROOT / 'data' / 'demo.sqlite3'
+    if args.scanner_experiment:
+        if args.demo:parser.error('Choose either --demo or --scanner-experiment.')
+        DB = ROOT / 'data' / 'scanner-experiment.sqlite3'
     try:
         server = ThreadingHTTPServer(('127.0.0.1',args.port), Handler)
     except OSError:
         print(f'Port {args.port} is already in use. If Remote Atlas is running, open http://127.0.0.1:{args.port}. Otherwise use --port 8001.', flush=True)
         raise SystemExit(1)
     initialize()
+    if args.scanner_experiment:
+        with connect() as db:
+            db.execute("INSERT OR IGNORE INTO app_settings(key,value) VALUES('ai_research_enabled','false')")
+    if not DEMO_MODE:SCANNER.start_scheduler()
     print(f'Remote Atlas ready at http://127.0.0.1:{args.port}', flush=True)
     if args.open_browser:
         import webbrowser
@@ -234,4 +279,6 @@ if __name__ == '__main__':
     except KeyboardInterrupt:
         print('\nRemote Atlas stopped. Your progress is saved.')
     finally:
+        SCANNER.shutdown.set()
+        SCANNER.stop.set()
         server.server_close()

@@ -72,3 +72,54 @@ Profiles persist in `company_profiles` in the same SQLite database as your progr
 `python app.py --demo --port 8002` runs a separate demo using `data/demo.sqlite3`. AI research and key settings are disabled on the server, and visitors can experiment with the demo's shared bookmarks, click history and notes. The personal database is not copied or exposed. Pair this with a temporary Cloudflare Tunnel to `http://127.0.0.1:8002`; keep the computer awake while sharing. Anyone with the tunnel URL can use this demo. Demo notes are shared among all visitors, so do not enter private information there.
 
 For the sharing session started by Codex, double-click **Stop Demo Sharing.cmd** to stop its tunnel and demo server. This leaves your personal tracker running. Local tunnel binaries and session logs live in Git-ignored `.local-tools/` and `.share/` folders. The generated public URL changes when a new quick tunnel is created.
+
+
+## Experimental local job matching (feature/local-job-matching)
+
+This feature is developed on its own branch. `main` is not merged or changed by the experiment. It uses public job feeds and local skill matching; scanning does not call Groq and is independent of the AI research toggle.
+
+### Try it on Windows
+
+1. Double-click **Setup Job Scanner.cmd** once. It creates an isolated `.venv-scanner`, installs Playwright and pypdf, and downloads a headless Chromium browser into the ignored `.local-tools` folder. Setup is already completed on the current development computer.
+2. Double-click **Start Job Scanner.cmd**. It opens `http://127.0.0.1:8003` with a **separate** `data/scanner-experiment.sqlite3` database. Your existing `data/tracker.sqlite3` and the public demo database are not copied or edited. Groq research starts disabled in this experiment.
+3. Open **Matching jobs (LAB)**. Paste your resume or import a text PDF / `.txt`, review the text, and save. Only extracted resume text is stored, not the original PDF. Scanned image PDFs and encrypted PDFs require pasted text.
+4. Choose role keywords, preferred location, and optional experience. Bookmark companies in this experimental directory to scan a shortlist, or choose All companies. Start with 25 before scanning the entire directory. Verified starter career-board sources for 15Five and Acquia are included; they can be replaced with a manual override.
+5. Click **Scan now**, or select a company under **Connect or correct a company careers page** and use **Save & scan this company**. The queue runs in the background; **Stop scan** stops between network operations. Keep the app's terminal running.
+6. Filter job results by skill overlap, remote status, listed location, and detected experience requirements. **Company coverage** shows which companies have matches, which feeds were checked, partial coverage, failures, and companies not yet checked. Results and timestamps are saved in SQLite.
+
+You can instead run:
+
+```powershell
+.\.venv-scanner\Scripts\python.exe app.py --scanner-experiment --port 8003
+```
+
+`python app.py` still uses the original tracker database. Without Playwright, supported public APIs and regular HTML extraction still work; leave browser fallback unchecked. Enabling browser fallback alone does not call an AI service or consume Groq quota.
+
+### How scanning works
+
+- Read an explicit careers override, a previously researched careers URL, or discover careers links on the company's official website. Provider tenants are derived from observed links, not guessed from company names.
+- Fetch public Greenhouse, Lever (global and EU), and Ashby feeds. These return published openings, not applications or private candidate data. The implementation performs no application submission, sign-in or CAPTCHA solving.
+- Try public careers-page JSON-LD `JobPosting` records and bounded HTML job-detail pages whose title matches their main heading. Playwright is a fallback for rendering JavaScript and a maximum of two visible Load more / Show more actions. Arbitrary layouts, infinite scrolling, login walls and unsupported ATS platforms are not guaranteed to work.
+- Respect robots.txt for website navigation and stop when access is restricted. Requests are paced; each company has a bounded discovery budget (up to five discovery pages, three job-detail pages and one browser session), response-size limits and network timeouts. Private-network destinations, credentials in URLs and unusual ports are rejected; redirects are checked too. A slow final network request may overrun the nominal 65-second company budget.
+- Cache successful / partial checks for 24 hours and failed checks for 4 hours. Unchecked and oldest checks go first. Refresh cached checks explicitly when required. Changing a careers override invalidates its previous check. A failed refresh preserves old jobs and labels them as older results. A complete public feed with no openings deactivates previous listings. Partial HTML scans never claim exhaustive coverage.
+
+### Matching and scheduling
+
+The score is the percentage of recognized posting skills that appear in your resume. Matching uses a local alias dictionary with word boundaries; it is explainable keyword overlap, **not semantic AI evaluation, a qualification guarantee or a hiring probability**. It does not decide whether any applicant is hired. Role title keywords are checked separately. Experience signals and seniority are warnings; location and remote flags are taken only from listing evidence, and missing information remains unknown. The company PDF's region is not used to assume an individual job permits work from India. Confirm source requirements before applying.
+
+Changing the resume or role preferences rematches already stored jobs without fetching websites. Unscored jobs can be included with a separate checkbox. Only 10,000 recent active postings are evaluated per results request, with the top 3,000 title-matching rows returned; the UI reports when this limit is reached. View job opens the stored listing URL and records a company visit. Scan fetches themselves do not increase the click count.
+
+Daily scanning is optional and disabled initially. When enabled it checks every minute while this app process is running and starts a scan when the previous scan started at least 24 hours ago (or on the first tick if no scan exists). It does not wake a sleeping computer or run when the app is closed. On restart, interrupted scans are marked interrupted rather than silently resumed. Public demo mode blocks all scanner APIs and resume settings, so the shared internet demo cannot access your personal resume or start scans.
+
+Resume text, preferences, source overrides, collected jobs and scan history live in the local SQLite database. Existing CSV and JSON exports cover the tracker data, not the scanner resume/preferences/jobs; to back up the complete experiment, stop it and copy `data/scanner-experiment.sqlite3`. Do not upload this file to Git. The resume can be cleared by saving empty text with daily scanning disabled.
+
+### Validate or discard
+
+```powershell
+.\.venv-scanner\Scripts\python.exe -m unittest discover -s tests -v
+node --check static/matcher.js
+```
+
+Tests cover all three feed adapters, discovery, private-URL rejection, partial and failed checks, skill matching, cache invalidation, cancellation, tracked job visits, demo privacy, and a real headless Chromium fixture that renders job JSON-LD through JavaScript and a Load more button. Live smoke checks verified Lever, Greenhouse and Ashby feeds; coverage of all 735 companies has not been verified.
+
+To abandon the experiment, stop its server with Ctrl+C and switch back to `main`. Restart the normal launcher. The branch, ignored virtual environment/browser downloads, and separate experiment database can remain without changing your original tracker.

@@ -145,3 +145,65 @@
 @media(max-width:1150px) { .research-banner { flex-wrap: wrap; } }
 @media(prefers-reduced-motion:reduce) { .research-switch .switch-track span { transition: none; } }
 .demo-notice { background: #374a31; color: #e0ebd6; text-align: center; padding: 10px 16px; font-size: 12px; position: sticky; top: 0; z-index: 5; }
+
+/* Experimental local job matcher */
+#matcher { padding: 32px 0; }
+.matcher-box { background: #fff; border: 1px solid var(--border); border-radius: 9px; padding: 22px; margin: 18px 0; }
+.matcher-box>summary { cursor: pointer; font-weight: 600; font-size: 14px; }
+.matcher-box>summary span { float: right; color: var(--muted); font-weight: 400; font-size: 11px; }
+.matcher-box h3 { margin: 0 0 16px; font-size: 16px; font-weight: 600; }
+.matcher-box textarea { width: 100%; margin-top: 7px; }
+.matcher-box label { font-size: 12px; }
+.matcher-privacy, .match-score-explainer { color: var(--muted); line-height: 1.7; font-size: 12px; margin: 17px 0; }
+.matcher-privacy { background: #f0f3ea; padding: 13px; border-radius: 5px; }
+.matcher-form-grid { display: grid; grid-template-columns: repeat(auto-fit,minmax(180px,1fr)); gap: 15px; }
+.matcher-checks { display: flex; align-items: center; gap: 12px 22px; flex-wrap: wrap; margin: 14px 0; }
+.matcher-checks label, .inline-check { display: inline-flex; gap: 8px; align-items: center; font-size: 11px; margin: 0; }
+.matcher-checks input[type=checkbox], .inline-check input { accent-color: #7c9a63; }
+.resume-import { display: flex; gap: 12px; flex-wrap: wrap; align-items: center; margin: 13px 0; font-size: 11px; }
+.resume-import input { max-width: 270px; font-size: 11px; padding: 7px; }
+.scan-actions { display: flex; gap: 12px; align-items: end; flex-wrap: wrap; }
+.scan-actions>label:not(.inline-check) { display: flex; flex-direction: column; gap: 6px; }
+.scan-actions .inline-check { align-self: center; margin-top: 17px; }
+#scan-status { font-size: 12px; color: var(--muted); margin-top: 15px; }
+#scan-progress { width: 100%; height: 7px; accent-color: #91ad75; margin-top: 14px; }
+#matcher-error { color: #b46149; font-size: 12px; }
+.matcher-results-header { display: flex; gap: 12px; justify-content: space-between; flex-wrap: wrap; align-items: center; margin-bottom: 15px; }
+.matcher-results-header h3 { margin: 0; }
+.matcher-results-header button[aria-pressed=true] { border-color: #849b68; background: #eaf0e1; }
+.match-filters { display: grid; grid-template-columns: repeat(3,1fr); gap: 18px; }
+.match-filters label { display: flex; flex-direction: column; gap: 6px; }
+.match-filters input[type=range] { accent-color: #8ba26d; width: 100%; padding: 0; }
+.match-filters strong { font-size: 15px; }
+#match-count { font-size: 12px; color: var(--muted); }
+.match-job { padding: 22px 0; border-top: 1px solid var(--border); }
+.match-job-top { display: flex; justify-content: space-between; gap: 20px; }
+.match-job h3 { font-size: 18px; margin: 8px 0; }
+.match-job-top p { color: var(--muted); font-size: 12px; margin: 6px 0 12px; }
+.match-score { font-size: 27px; color: #638748; text-align: right; white-space: nowrap; }
+.match-score small { display: block; font-size: 9px; color: var(--muted); }
+.job-flags { display: flex; gap: 7px; flex-wrap: wrap; }
+.skill-list { font-size: 12px; line-height: 1.8; }
+.skill-list strong { font-weight: 600; }
+.match-job details summary { cursor: pointer; color: var(--muted); font-size: 11px; }
+.job-excerpt { white-space: pre-line; font-size: 12px; color: var(--muted); line-height: 1.8; overflow-wrap: anywhere; }
+.match-job-footer { display: flex; justify-content: space-between; gap: 15px; align-items: center; margin-top: 18px; }
+.match-job-footer small, .coverage-row small { color: var(--muted); font-size: 10px; }
+.match-job-footer button { margin-left: 9px; }
+.coverage-row { display: flex; align-items: center; justify-content: space-between; gap: 15px; border-top: 1px solid var(--border); padding: 18px 0; }
+.coverage-row strong { display: inline-block; margin: 0 10px 8px 0; font-size: 14px; }
+.coverage-row p { font-size: 12px; color: var(--muted); margin: 0 0 8px; }
+.coverage-row>div:last-child { min-width: 135px; display: flex; flex-direction: column; gap: 10px; }
+[data-theme=dark] .matcher-box { background: #222b25; }
+[data-theme=dark] .matcher-privacy { background: #2d392c; }
+[data-theme=dark] .matcher-results-header button[aria-pressed=true] { background: #3c4c33; }
+[data-theme=dark] .match-score { color: #b5cd9e; }
+[data-theme=dark] #matcher-error { color: #dfad98; }
+@media(max-width:700px) {
+ .matcher-box { padding: 17px; }
+ .matcher-box>summary span { float: none; display: block; margin-top: 5px; }
+ .match-filters { grid-template-columns: 1fr; gap: 12px; }
+ .match-job-footer, .coverage-row { flex-direction: column; align-items: start; }
+ .match-job-footer>div { display: flex; width: 100%; align-items: center; justify-content: end; }
+ .coverage-row>div:last-child { flex-direction: row; flex-wrap: wrap; }
+}
