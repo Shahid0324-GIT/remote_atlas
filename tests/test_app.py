@@ -5,6 +5,7 @@ import sys
 import tempfile
 import threading
 import unittest
+from unittest.mock import patch
 from pathlib import Path
 from urllib.error import HTTPError
 from urllib.request import Request, urlopen
@@ -17,6 +18,8 @@ class TrackerTests(unittest.TestCase):
     def setUpClass(cls):
         cls.temp = tempfile.TemporaryDirectory(dir=Path(__file__).resolve().parents[1] / 'data')
         app.DB = Path(cls.temp.name) / 'test.sqlite3'
+        cls.original_env_file = app.ai_profiles.ENV_FILE
+        app.ai_profiles.ENV_FILE = Path(cls.temp.name) / '.env'
         app.initialize()
         cls.server = app.ThreadingHTTPServer(('127.0.0.1', 0), app.Handler)
         cls.base = f'http://127.0.0.1:{cls.server.server_port}'
@@ -28,6 +31,7 @@ class TrackerTests(unittest.TestCase):
         cls.server.shutdown()
         cls.server.server_close()
         cls.thread.join()
+        app.ai_profiles.ENV_FILE = cls.original_env_file
         cls.temp.cleanup()
 
     def request(self, path, data=None, **headers):
@@ -50,8 +54,7 @@ class TrackerTests(unittest.TestCase):
         row=next(c for c in json.load(self.request('/api/companies')) if c['id']==1)
         self.assertEqual(row['clicks'],12)
         history=json.load(self.request('/api/activity'))
-        self.assertEqual(len(history),12)
-        self.assertTrue(all(c['company_id']==1 for c in history))
+        self.assertEqual(len([c for c in history if c['company_id']==1]),12)
 
     def test_notes_pipeline_and_exports(self):
         notes='<script>alert(1)</script>\n=2+2'
@@ -74,5 +77,60 @@ class TrackerTests(unittest.TestCase):
         self.assertEqual(caught.exception.code,403)
         with self.assertRaises(HTTPError) as caught:self.request('/api/companies/99999/visit',{})
         self.assertEqual(caught.exception.code,404)
+
+    def test_ai_settings_never_return_the_key(self):
+        secret='gsk_'+'testsecret'*4
+        result=json.load(self.request('/api/ai/settings',{'key':secret,'model':'openai/gpt-oss-20b'}))
+        self.assertTrue(result['configured'])
+        self.assertNotIn(secret,json.dumps(result))
+        self.assertNotIn(secret,self.request('/api/ai/settings').read().decode())
+        self.assertNotIn(secret,self.request('/api/backup').read().decode())
+        with self.assertRaises(HTTPError) as caught:
+            self.request('/api/ai/settings',{'key':'bad-key','model':'openai/gpt-oss-20b'})
+        self.assertEqual(caught.exception.code,400)
+        caught.exception.close()
+
+    def test_company_research_cache_refresh_and_failure(self):
+        self.assertIsNone(json.load(self.request('/api/companies/10/profile'))['profile'])
+        profile={'summary':'A researched company','careers_url':'https://example.com/careers','sources':[{'title':'Official','url':'https://example.com'}]}
+        with patch.object(app.ai_profiles,'research',return_value=profile) as research:
+            first=json.load(self.request('/api/companies/10/research',{}))
+            self.assertFalse(first['cached'])
+            cached=json.load(self.request('/api/companies/10/research',{}))
+            self.assertTrue(cached['cached'])
+            self.assertEqual(research.call_count,1)
+            identity=research.call_args.args[0]
+            self.assertEqual(set(identity),{'name','url'})
+        app.initialize()
+        self.assertEqual(json.load(self.request('/api/companies/10/profile'))['profile'],profile)
+        visit=json.load(self.request('/api/companies/10/visit',{'kind':'careers'}))
+        self.assertEqual(visit['url'],'https://example.com/careers')
+        with self.assertRaises(HTTPError) as missing:self.request('/api/companies/11/visit',{'kind':'careers'})
+        self.assertEqual(missing.exception.code,400)
+        missing.exception.close()
+        with patch.object(app.ai_profiles,'research',side_effect=app.ai_profiles.ResearchError('Rate limit',429)):
+            with self.assertRaises(HTTPError) as caught:self.request('/api/companies/10/research',{'refresh':True})
+            self.assertEqual(caught.exception.code,429)
+            caught.exception.close()
+        self.assertEqual(json.load(self.request('/api/companies/10/profile'))['profile'],profile)
+        self.assertNotIn(10,app.RESEARCHING)
+
+    def test_research_deduplicates_simultaneous_requests(self):
+        started=threading.Event()
+        release=threading.Event()
+        def research(company):
+            started.set()
+            release.wait(5)
+            return {'summary':'Complete'}
+        with patch.object(app.ai_profiles,'research',side_effect=research):
+            with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
+                pending=pool.submit(lambda:json.load(self.request('/api/companies/12/research',{})))
+                self.assertTrue(started.wait(3))
+                try:
+                    with self.assertRaises(HTTPError) as caught:self.request('/api/companies/12/research',{})
+                    self.assertEqual(caught.exception.code,409)
+                    caught.exception.close()
+                finally:release.set()
+                self.assertEqual(pending.result()['profile']['summary'],'Complete')
 
 if __name__=='__main__': unittest.main()
