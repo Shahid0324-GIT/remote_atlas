@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Remote Atlas · Your next chapter</title><link rel="stylesheet" href="/style.css"></head>
+<body>
+<aside class="sidebar">
+ <a class="brand" href="/">◈ <span>remote atlas<span class="brand-sub">YOUR JOB SEARCH WORKSPACE</span></span></a>
+ <div class="nav-label">WORKSPACE</div>
+ <nav aria-label="Workspace"><button data-view="all" class="active">▦ <span>All companies</span><b id="nav-total">—</b></button><button data-view="unvisited">◉ <span>To explore</span></button><button data-view="saved">☆ <span>Bookmarked</span></button><button data-view="pipeline">⇢ <span>My pipeline</span></button><button data-view="followups">◷ <span>Follow-ups</span></button><button data-view="activity">↗ <span>Click history</span></button></nav>
+ <div class="sidebar-bottom"><div class="local-dot">Saved on this computer</div><p>Your progress lives in SQLite.<br>Small steps. New possibilities.</p><a href="/api/backup">Download full backup ↓</a></div>
+</aside>
+<main>
+ <header><span>WORKSPACE <span class="slash">/</span> <span id="breadcrumb">All companies</span></span><a class="export" href="/api/export">↓ Export CSV</a></header>
+ <section class="intro"><div><div class="eyebrow">A LITTLE MOMENTUM, EVERY DAY</div><h1>Your next chapter starts here<span>.</span></h1><p>A world of remote companies. One place to keep moving forward.</p></div><div class="intro-badge">↗<span>WORK FROM<br>ANYWHERE</span></div></section>
+ <section class="stats" aria-label="Search statistics">
+  <article><span>Total link clicks <i>↗</i></span><strong id="total-clicks">0</strong><small>Every tracked visit, including revisits</small></article>
+  <article><span>Companies explored <i>◉</i></span><strong id="unique-count">0 <em>/ —</em></strong><div class="progress"><div id="progress-bar"></div></div></article>
+  <article><span>Applications sent <i>⇢</i></span><strong id="applications">0</strong><small>Applied, interviewing, and offers</small></article>
+  <article><span>Follow-ups due <i>◷</i></span><strong id="due-count">0</strong><small>Scheduled for today or earlier</small></article>
+ </section>
+ <section class="directory"><div class="section-heading"><div><h2 id="view-title">The company directory</h2><p id="view-description">Find your fit. Explore at your own pace.</p></div><button id="surprise" class="secondary">✧ Pick one to explore</button></div>
+ <div class="filters" id="filters"><label class="search"><span>⌕</span><input id="search" type="search" placeholder="Search companies, regions, or notes…" aria-label="Search companies"></label><select id="region" aria-label="Filter region"><option value="">All regions</option><option>Worldwide</option><option>India</option><option>Asia</option><option>Europe</option><option>USA</option><option>North America</option><option>Latin America</option><option>Australia</option><option>Africa</option></select><select id="status" aria-label="Filter status"><option value="">All stages</option></select><select id="sort" aria-label="Sort companies"><option value="name">Name A–Z</option><option value="clicks">Most visited</option><option value="recent">Recently visited</option><option value="follow_up">Follow-up date</option></select></div>
+ <div class="results-line"><span id="result-count" role="status">Loading companies…</span><button id="clear" class="text-button">Clear filters</button></div>
+ <div id="companies" class="company-grid"></div><div id="activity" hidden></div>
+ <div class="pagination" id="pagination"><span id="page-info"></span><div><button id="previous" class="secondary">← Previous</button><button id="next" class="secondary">Next →</button></div></div>
+ </section>
+ <footer><span>Built for a more intentional job search.</span><span>Source: your company PDF · Links & regions may have changed</span></footer>
+</main>
+<dialog id="details"><form id="details-form"><div class="dialog-top"><div><div class="eyebrow">COMPANY NOTEBOOK</div><h2 id="detail-name"></h2></div><button type="button" id="close-dialog" class="icon-button" aria-label="Close">×</button></div><p id="detail-region"></p><p id="detail-url" class="url-text"></p><div class="form-row"><label>Application stage<select id="detail-status"></select></label><label>Follow-up date<input type="date" id="detail-followup"></label></div><label>Notes<textarea id="detail-notes" maxlength="10000" rows="6" placeholder="Roles to look for, requirements, contacts, or your next step…"></textarea></label><p id="detail-meta" class="muted"></p><div class="dialog-actions"><button type="button" id="detail-visit" class="secondary">Open website ↗</button><button type="submit" id="save-details" class="primary">Save changes</button></div></form></dialog>
+<div id="toast" role="status" aria-live="polite"></div><script src="/app.js" defer></script>
+</body></html>
